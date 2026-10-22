@@ -51,7 +51,7 @@ textarea{width:100%;min-height:56px;font:inherit;color:var(--fg);background:#101
 pre{white-space:pre-wrap;background:#10131b;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px}
 .empty{color:var(--muted);padding:20px 0;text-align:center}
 /* Lightbox: in-page only, never touches browser history */
-#lb{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.95);display:none;flex-direction:column}
+#lb{position:fixed;inset:0;z-index:30;background:#000;display:none;flex-direction:column}
 #lb.open{display:flex}
 #lb .top{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 10px 8px}
 #lb .top .cap{flex:1;min-width:0;font-size:14px}#lb .top .cap b{display:block;overflow-wrap:anywhere}
@@ -77,6 +77,27 @@ details.shipped>summary{cursor:pointer;color:var(--muted);font-weight:700;paddin
 #lb .pinbox{font-size:13px;color:var(--muted);padding:0 10px}
 #lb-menu{display:none;padding:0 10px 4px;max-height:45vh;overflow:auto}#lb-menu.open{display:block}
 #lb .bottom .clr{flex:0 0 auto;font-weight:400}
+/* v2 set view: stage sections, NOW IN APP vs DRAFT */
+.headline{font-size:16px;font-weight:700;margin:8px 0 2px;line-height:1.35}
+details.more{margin:2px 0 4px}details.more>summary{cursor:pointer;color:var(--muted);font-size:13px}
+.stg{margin-top:16px;padding-top:4px}
+.stagehead{font-size:19px;color:var(--fg);text-transform:none;letter-spacing:0;margin:10px 0 2px;padding:8px 12px;border-radius:10px;background:#1e2230;border-left:5px solid var(--acc)}
+.stg>.note{margin:0 2px 8px}
+.sbadge{display:block;font-weight:900;letter-spacing:.05em;font-size:14px;padding:8px 12px;text-align:left}
+.sbadge.now{background:#d1d5db;color:#111827}
+.sbadge.draft{background:#facc15;color:#1a1205}
+.sbadge.ref{background:#374151;color:#e5e7eb}
+.sbadge .done{float:right;font-weight:800;font-size:12px;background:var(--ship);color:#1a1205;border-radius:6px;padding:1px 6px}
+.card.now{border-color:#6b7280;background:#15171d}.card.now .title{color:#d1d5db}
+.card.draft{border-color:#a16207}.card.draft.yes{border-color:var(--yes)}.card.draft.no{border-color:var(--no)}
+.letter{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#facc15;color:#1a1205;font-weight:900;margin-right:8px;flex:none}
+.ttl{display:flex;align-items:center;gap:0;flex-wrap:wrap;font-weight:800;font-size:16px}
+.ptag{font-size:12px;font-weight:800;border-radius:999px;padding:2px 8px;margin-left:8px;border:1px solid #22c55e;color:#86efac}
+.ptag.alt{border-color:#38bdf8;color:#7dd3fc}.ptag.ru{border-color:#6b7280;color:#d1d5db}
+.desc{font-size:13px;color:#c7cbd6;margin-top:2px}
+.empty.small{padding:6px 0;font-size:13px;text-align:left}
+#lb .lbbadge{display:table;margin:3px 0 2px;font-size:12px;font-weight:900;letter-spacing:.04em;border-radius:6px;padding:2px 7px}
+#lb .lbbadge.now{background:#d1d5db;color:#111827}#lb .lbbadge.draft{background:#facc15;color:#1a1205}#lb .lbbadge.ref{background:#374151;color:#e5e7eb}
 </style>
 </head>
 <body>
@@ -120,6 +141,54 @@ let store = loadLocal();
 function loadLocal(){ try { const s = JSON.parse(localStorage.getItem(LS_KEY) || "null"); return s && s.items ? s : {version:1, items:{}}; } catch { return {version:1, items:{}}; } }
 function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch {} }
 const keyOf = (s, it) => `${s.id}/${it.id}`;
+/* ---- v2: stage model. Items may carry stage (1-3), role ("current" | "draft" | "reference"), letter, pick
+   ("bot" | "alt" | "runner-up"), desc. Auto sets get them from set.json "itemRules" (first regex match on the
+   file wins) and "autoLetters". Ultra sets are reference only: s1-s3 are the current art, no voting. */
+const STAGE_NAMES = {1:"Hatchling", 2:"Adolescent", 3:"Legend"};
+const letterOf = (n) => n < 26 ? String.fromCharCode(65 + n) : letterOf(Math.floor(n / 26) - 1) + String.fromCharCode(65 + n % 26);
+function normalize(list){
+  for (const s of list) {
+    s.items ||= [];
+    if (s.kind === "ultra") { s.noVote = true; for (const it of s.items) { const m = /^s([123])$/.exec(it.id); if (m) { it.stage = +m[1]; it.role = "current"; it.title = `Current ${STAGE_NAMES[it.stage]}`; } } }
+    for (const it of s.items) {
+      let m = null;
+      const r = (s.itemRules || []).find((r) => { try { return (m = new RegExp(r.match).exec(it.file || it.id)); } catch { return false; } });
+      if (!r) continue;
+      const orig = it.title, sub = (v) => typeof v === "string" ? v.replace(/\$(\d)/g, (_, n) => m[n] ?? "") : v;   // "$1" = regex group
+      for (const [k, v] of Object.entries(r)) if (k !== "match" && (k === "title" || k === "group" || it[k] === undefined)) it[k] = sub(v);
+      if (it.role === "draft" && !it.desc && orig) it.desc = orig;
+    }
+    if (s.autoLetters) { const per = {}; for (const it of s.items) if (it.role === "draft" && !it.letter) it.letter = letterOf(per[it.stage] = (per[it.stage] ?? -1) + 1); }
+    for (const it of s.items) {
+      if (it.role === "draft") it.label = `${STAGE_NAMES[it.stage] || "Draft"} ${it.letter || ""}`.trim();
+      else if (it.role === "current") it.label = it.title || `Current ${STAGE_NAMES[it.stage]}`;
+      if (it.role === "reference") { it.group ||= "extras"; if (!(s.groups || []).some((g) => g.id === it.group)) (s.groups ||= []).push({id: it.group, title: "Extras (nothing to vote)"}); }
+    }
+    s.staged = s.items.some((it) => it.stage);
+  }
+  return list;
+}
+const names = (ns) => ns.map((n) => STAGE_NAMES[n]).join(" and ");
+const changing = (s) => [1, 2, 3].filter((n) => s.items.some((it) => it.stage === n && it.role === "draft"));
+const shortTitle = (s) => s.kind === "ultra" ? s.title : s.title.replace(/\s+(s\d.*|drafts?)$/i, "");
+function headline(s){
+  if (s.headline) return s.headline;
+  if (s.kind === "ultra") return `${s.title}: the art in the app now. Nothing to vote here.`;
+  const ch = changing(s); if (!ch.length) return "";
+  const stay = [1, 2, 3].filter((n) => !ch.includes(n));
+  return `${shortTitle(s)}: pick a new ${names(ch)}.${stay.length ? ` ${names(stay)} stay${stay.length === 1 ? "s" : ""}.` : ""}`;
+}
+/* The badge every card / lightbox shows: what this picture IS. */
+function badgeOf(s, it){
+  const st = STAGE_NAMES[it.stage];
+  if (it.role === "current") return s.kind !== "ultra" && !s.items.some((x) => x.stage === it.stage && x.role === "draft")
+    ? {cls:"now", t:"NOW · style reference, not changing"} : {cls:"now", t:"NOW IN APP"};
+  if (it.role === "draft") return {cls:"draft", t:`DRAFT · would replace ${st}`};
+  if (it.role === "reference") return {cls:"ref", t:"REFERENCE · nothing to vote"};
+  return null;
+}
+const pickTag = (it) => it.pick === "bot" ? `<span class="ptag">★ Bot pick</span>` : it.pick === "alt" ? `<span class="ptag alt">Alt pick</span>` : it.pick === "runner-up" ? `<span class="ptag ru">Runner-up</span>` : "";
+const nameOf = (it) => it.label || it.title;
 const clean = (t) => (t||"").replace(/\s+/g," ").trim();
 const stale = (e, it) => !!(e && e.stamp && it.stamp && e.stamp !== it.stamp);
 const rawOf = (s, it) => { const e = store.items[keyOf(s, it)]; return e && !stale(e, it) ? e : null; };
@@ -138,7 +207,7 @@ function doneOf(s, it){
   if (e?.shipped) return `SHIPPED ${e.shipped}`;
   return "";
 }
-const canVote = (s, it) => !(s.noVote || it.noVote);
+const canVote = (s, it) => !(s.noVote || it.noVote || it.role === "current" || it.role === "reference");
 const inQueue = (s, it) => canVote(s, it) && !doneOf(s, it) && !decided(s, it);
 
 async function push(k){
@@ -219,13 +288,13 @@ function pruneStale(){
 /* ---------- Copy text (Number Pictures shape): version line, then CONFIRM / REMAKE / COMMENT buckets of "Section: id, id — note" ---------- */
 function pendingEntries(){
   const out = [];
-  for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isActive(e) && !doneOf(s, it)) out.push({s, item:it, e, k: keyOf(s, it)}); }
+  for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isActive(e) && !doneOf(s, it) && canVote(s, it)) out.push({s, item:it, e, k: keyOf(s, it)}); }
   return out;
 }
 function bySection(list, note){
   const out = [];
   for (const s of sets) {
-    const words = list.filter((x) => x.s === s).map((x) => { const n = note ? note(x) : ""; return n ? `${x.item.id} — ${n}` : x.item.id; });
+    const words = list.filter((x) => x.s === s).map((x) => { const n = note ? note(x) : ""; const w = x.item.label ? `${x.item.label} (${x.item.id})` : x.item.id; return n ? `${w} — ${n}` : w; });
     if (words.length) out.push(`${s.title}: ${words.join(", ")}`);
   }
   return out;
@@ -325,10 +394,12 @@ function lbRender(){
   if (lbShown !== mk) {
     document.getElementById("lb-media").innerHTML = it.kind === "video"
       ? `<video src="${src(s, it)}" poster="${poster(s, it)}" controls autoplay playsinline></video>`
-      : `<img src="${src(s, it)}" alt="${esc(it.title)}" draggable="false">`;
+      : `<img src="${src(s, it)}" alt="${esc(nameOf(it))}" draggable="false">`;
     lbShown = mk;
   }
-  document.getElementById("lb-cap").innerHTML = `<b>${esc(it.title)}</b><span class="note">${lb.i + 1} / ${lb.list.length} · ${esc(s.title)}${done ? ` · <span class="badge">${esc(done)}</span>` : ""}</span>`;
+  const bd = badgeOf(s, it);
+  const bdText = bd ? (it.role === "draft" ? `${bd.t} · Option ${it.letter}` : it.role === "current" ? `${bd.t} · Stage ${it.stage} ${STAGE_NAMES[it.stage]}` : bd.t) : "";
+  document.getElementById("lb-cap").innerHTML = `<b>${esc(nameOf(it))}</b>${bd ? `<span class="lbbadge ${bd.cls}">${esc(bdText)}</span> ` : ""}<span class="note">${lb.i + 1} / ${lb.list.length} · ${esc(s.title)}${done ? ` · <span class="badge">${esc(done)}</span>` : ""}</span>`;
   const reasons = e.vote === "no" ? [...(e.reasons||[]), clean(e.comment)].filter(Boolean).join("; ") : clean(e.comment);
   const h = (raw?.history||[])[0];
   document.getElementById("lb-pin").innerHTML = [e.vote ? `<b class="${e.vote==="yes"?"pin yes":"pin"}">${e.vote==="yes"?"CONFIRM":"REMAKE"}</b>${reasons ? " · " + esc(reasons) : ""}` : reasons ? "💬 " + esc(reasons) : "",
@@ -382,7 +453,7 @@ function stats(s){
   }
   return {todo, y, n, c, sent};
 }
-function statLine(s){ const t = stats(s); return [t.todo ? `${t.todo} to review` : "nothing to review", t.y && `${t.y} confirm`, t.n && `${t.n} remake`, t.c && `${t.c} comment`, t.sent && `${t.sent} sent`].filter(Boolean).join(" · "); }
+function statLine(s){ const t = stats(s), ch = s.staged && s.kind !== "ultra" ? changing(s) : []; return [ch.length && `New ${names(ch)}`, t.todo ? `${t.todo} to review` : "nothing to review", t.y && `${t.y} confirm`, t.n && `${t.n} remake`, t.c && `${t.c} comment`, t.sent && `${t.sent} sent`].filter(Boolean).join(" · "); }
 function setCard(s){ return `<button class="setcard" data-set="${esc(s.id)}"><img src="${cover(s)}" alt="" loading="lazy"><div><div class="t">${esc(s.title)} ${s.shipped ? `<span class="badge">SHIPPED ${esc(s.shipped)}</span>` : s.partial ? `<span class="badge">SHIPPED ${esc(s.partial)}</span>` : ""}</div><div class="note">${esc(statLine(s))}</div></div></button>`; }
 function renderHome(){
   const review = sets.filter((s) => s.kind !== "ultra"), ultras = sets.filter((s) => s.kind === "ultra");
@@ -390,11 +461,11 @@ function renderHome(){
   const q = ultraQuery.trim().toLowerCase();
   const shown = ultras.filter((s) => !q || s.name.toLowerCase().includes(q) || String(s.num) === q.replace(/^#?0*/, "") || s.blurb.toLowerCase().includes(q));
   return `${STATIC ? `<div class="note">Online review copy of ClassNest v${esc(version || "?")} art. Votes are saved in this browser; tap Copy and paste the text in chat.</div>` : `<div class="appcard"><div><div class="title">ClassNest app (preview)</div><div class="note">The real app from the local clone, served at /app/. Its saved classes live in this browser only.</div></div><a class="btn" href="/app/" target="_blank" rel="noopener">Open app ↗</a></div>`}
-  <h2>To review</h2><div class="grid">${live.map(setCard).join("") || `<p class="empty">Nothing waiting. 🎉</p>`}</div>
-  ${shipped.length ? `<details class="shipped"><summary>Shipped (${shipped.length})</summary><div class="grid">${shipped.map(setCard).join("")}</div></details>` : ""}
-  <h2>All Ultras in the repo (${ultras.length})</h2>
+  <h2 id="h-waiting">Waiting for your vote</h2><div class="grid" id="waiting">${live.map(setCard).join("") || `<p class="empty">Nothing waiting. 🎉</p>`}</div>
+  ${shipped.length ? `<details class="shipped" id="done"><summary>Done (${shipped.length})</summary><div class="grid">${shipped.map(setCard).join("")}</div></details>` : ""}
+  <h2 id="h-ultras">Browse all Ultras (current art, nothing to vote) · ${ultras.length}</h2>
   <input id="uq" type="search" placeholder="Search Ultras by name or number" value="${esc(ultraQuery)}" autocomplete="off">
-  <div class="tiles" style="margin-top:8px">${shown.map((s) => { const t = stats(s); return `<button class="tile ${t.n ? "no" : t.y ? "yes" : ""}" data-set="${esc(s.id)}"><img src="${cover(s)}" alt="" loading="lazy"><div class="cap"><b>#${String(s.num).padStart(2,"0")} ${esc(s.name)}</b>${s.items.some((i) => i.kind === "video") ? "🎬 " : ""}${t.y ? "✓" + t.y : ""}${t.n ? " ✕" + t.n : ""}${t.c ? " 💬" + t.c : ""}</div></button>`; }).join("") || `<p class="empty">No match.</p>`}</div>`;
+  <div class="tiles" style="margin-top:8px">${shown.map((s) => { const t = stats(s); void t; return `<button class="tile" data-set="${esc(s.id)}"><img src="${cover(s)}" alt="" loading="lazy"><div class="cap"><b>#${String(s.num).padStart(2,"0")} ${esc(s.name)}</b>${s.items.some((i) => i.kind === "video") ? "🎬 film" : ""}</div></button>`; }).join("") || `<p class="empty">No match.</p>`}</div>`;
 }
 function passes(s, it){
   if (filter === "all") return true;
@@ -409,33 +480,69 @@ function passes(s, it){
   if (filter === "comment") return !!clean(e.comment);
   return true;
 }
+function nowCard(s, it){
+  const b = badgeOf(s, it);
+  return `<div class="card now"><span class="sbadge now">${esc(b.t)}</span>
+  <img class="media" src="${cardImg(s, it)}" alt="${esc(nameOf(it))}" loading="lazy" data-zoom="${esc(it.id)}">
+  <div class="body"><div class="title">${esc(nameOf(it))}</div><div class="note">Stage ${it.stage} · ${STAGE_NAMES[it.stage]} · in the app today${it.note ? " · " + esc(it.note) : ""}</div></div></div>`;
+}
 function card(s, it){
+  if (it.role === "current") return nowCard(s, it);
   const e = entryOf(s, it), raw = rawOf(s, it), k = keyOf(s, it), done = doneOf(s, it), pin = pinLine(s, it);
+  const b = badgeOf(s, it);
   const hist = (raw?.history||[]).length ? `<details class="hist"><summary>History (${raw.history.length})</summary><ul>${raw.history.map((h) => `<li>${esc(when(h.at))} — ${esc(h.reason)}</li>`).join("")}</ul></details>` : "";
   const img = cardImg(s, it);
   const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Tap a reason: REMAKE is applied and the card moves on.</div><div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}<button data-reason="" data-id="${esc(it.id)}">REMAKE (reason in comment)</button></div><button class="clearbtn" data-menuclose="1">Cancel</button></div>` : "";
   const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button></div>${menu}
   <label class="crow"><span class="note">Comment (saved as you type)</span><textarea placeholder="Comment or your own remake reason" data-comment="${esc(it.id)}" data-key="${esc(k)}">${esc(e.comment||"")}</textarea></label>
   ${e.vote || clean(e.comment) ? `<button class="clearbtn" data-clear="${esc(it.id)}">Clear verdict</button>` : ""}` : "";
-  return `<div class="card ${e.vote||""}">${done ? `<span class="badge">${esc(done)}</span>` : ""}
-  <img class="media" src="${img}" alt="${esc(it.title)}" loading="lazy" data-zoom="${esc(it.id)}">
-  <div class="body"><div class="title">${it.kind === "video" ? "▶ " : ""}${esc(it.title)}</div>${pin ? `<div class="pin ${pin.cls}">${esc(pin.t)}</div>` : ""}${it.note ? `<div class="note">${esc(it.note)}</div>` : ""}
+  const head = b ? `<span class="sbadge ${b.cls}">${esc(b.t)}${done ? `<span class="done">${esc(done)}</span>` : ""}</span>` : done ? `<span class="badge">${esc(done)}</span>` : "";
+  const ttl = it.role === "draft"
+    ? `<div class="ttl"><span class="letter">${esc(it.letter || "?")}</span>${esc(nameOf(it))}${pickTag(it)}</div>${it.desc ? `<div class="desc">${esc(it.desc)}</div>` : ""}`
+    : `<div class="title">${it.kind === "video" ? "▶ " : ""}${esc(nameOf(it))}</div>`;
+  return `<div class="card ${it.role || ""} ${e.vote||""}">${head}
+  <img class="media" src="${img}" alt="${esc(nameOf(it))}" loading="lazy" data-zoom="${esc(it.id)}">
+  <div class="body">${ttl}${pin ? `<div class="pin ${pin.cls}">${esc(pin.t)}</div>` : ""}${it.note ? `<div class="note">${esc(it.note)}</div>` : ""}
   ${votes}${hist}<div class="saved" data-saved="${esc(k)}"></div></div></div>`;
 }
 function tile(s, it){
   const e = entryOf(s, it);
-  return `<button class="tile ${e.vote||""}" data-zoom="${esc(it.id)}"><img src="${thumb(s, it)}" alt="" loading="lazy"><div class="cap">${esc(it.title)}</div></button>`;
+  return `<button class="tile ${e.vote||""}" data-zoom="${esc(it.id)}"><img src="${thumb(s, it)}" alt="" loading="lazy"><div class="cap">${esc(nameOf(it))}</div></button>`;
 }
-function visibleItems(){ return (set.groups?.length ? set.groups : [{id:"_"}]).flatMap((g) => set.items.filter((it) => (it.group || "_") === g.id && passes(set, it))); }
+let shownOrder = [];                 // items in the order they are on screen (lightbox ‹ › follows it)
+function visibleItems(){ return shownOrder.map((x) => x.it); }
+function renderStaged(){
+  const s = set, hl = headline(s), more = s.details || s.blurb;
+  let html = `${hl ? `<p class="headline">${esc(hl)}</p>` : ""}${more ? `<details class="more"><summary>Details</summary><p class="blurb">${esc(more)}</p></details>` : ""}`;
+  const order = [];
+  for (const st of [1, 2, 3]) {
+    const cur = s.items.filter((it) => it.stage === st && it.role === "current"), drafts = s.items.filter((it) => it.stage === st && it.role !== "current");
+    if (!cur.length && !drafts.length) continue;
+    const shown = drafts.filter((it) => passes(s, it)), nm = STAGE_NAMES[st];
+    const sub = s.kind === "ultra" ? "In the app now." : drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"}. Pick one to replace the current ${nm}, or REMAKE.` : "Not changing. Shown so you can check the style.";
+    order.push(...cur, ...shown);
+    html += `<section class="stg" data-stage="${st}"><h2 class="stagehead">Stage ${st} · ${nm}</h2><div class="note">${esc(sub)}</div><div class="grid">${cur.map((it) => nowCard(s, it)).join("")}${shown.map((it) => card(s, it)).join("")}</div>${drafts.length && !shown.length ? `<p class="empty small">${filter === "todo" ? "All drafts here have a vote ✓ (see Confirm / Remake / Sent)" : "No drafts for this filter."}</p>` : ""}</section>`;
+  }
+  for (const g of s.groups || []) {
+    const items = s.items.filter((it) => !it.stage && (it.group || "_") === g.id && (!canVote(s, it) || passes(s, it)));
+    if (!items.length) continue; order.push(...items);
+    const compact = g.compact || g.id === "scrub" || g.id === "extras";
+    html += `<h2>${esc(g.title || "")}</h2><div class="${compact ? "tiles" : "grid"}">${items.map((it) => compact ? tile(s, it) : card(s, it)).join("")}</div>`;
+  }
+  shownOrder = order.map((it) => ({s, it}));
+  return html;
+}
 function renderSet(){
+  if (set.staged) return renderStaged();
   const groups = set.groups?.length ? set.groups : [{id:"_", title:""}];
-  let html = `<p class="blurb">${esc(set.blurb||"")}</p>`; let n = 0;
+  let html = `<p class="blurb">${esc(set.blurb||"")}</p>`; let n = 0; const order = [];
   for (const g of groups) {
     const items = set.items.filter((it) => (it.group || "_") === g.id && passes(set, it));
-    if (!items.length) continue; n += items.length;
+    if (!items.length) continue; n += items.length; order.push(...items);
     const compact = g.compact || g.id === "scrub";
     html += `${g.title ? `<h2>${esc(g.title)}</h2>` : ""}<div class="${compact ? "tiles" : "grid"}">${items.map((it) => compact ? tile(set, it) : card(set, it)).join("")}</div>`;
   }
+  shownOrder = order.map((it) => ({s: set, it}));
   if (n) return html;
   const msg = filter === "todo" ? (set.shipped ? `Everything here shipped (${esc(set.shipped)}). Nothing left to review.` : "Nothing left to review here ✓") : "Nothing here for this filter.";
   return html + `<p class="empty">${msg}</p>`;
@@ -444,7 +551,7 @@ let summaryList = [];
 function renderSummary(){
   const all = pendingEntries(), text = formatApprovals(all);
   summaryList = all;
-  const sec = (title, list, note) => list.length ? `<div class="sum-sec"><b>${title} (${list.length})</b>${list.map((x) => `<div class="sum-item"><img src="${thumb(x.s, x.item)}" data-sum="${esc(x.s.id)}|${esc(x.item.id)}" alt=""><div><div class="title">${esc(x.item.title)}</div><div class="note">${esc(x.s.title)} · ${esc(x.item.id)}${note(x) ? " — " + esc(note(x)) : ""}</div></div></div>`).join("")}</div>` : "";
+  const sec = (title, list, note) => list.length ? `<div class="sum-sec"><b>${title} (${list.length})</b>${list.map((x) => `<div class="sum-item"><img src="${thumb(x.s, x.item)}" data-sum="${esc(x.s.id)}|${esc(x.item.id)}" alt=""><div><div class="title">${esc(nameOf(x.item))}</div><div class="note">${esc(x.s.title)} · ${esc(x.item.id)}${note(x) ? " — " + esc(note(x)) : ""}</div></div></div>`).join("")}</div>` : "";
   const sent = [];
   for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isSent(e) && !doneOf(s, it)) sent.push({s, it, e}); }
   sent.sort((a, b) => b.e.sent.at - a.e.sent.at);
@@ -471,8 +578,9 @@ function render(){
   document.getElementById("tab-summary").classList.toggle("on", v === "summary");
   document.getElementById("h-title").textContent = v === "set" ? set.title : "ClassNest preview";
   const todoN = v === "set" ? set.items.filter((it) => inQueue(set, it)).length : 0;
+  const votable = v === "set" && set.items.some((it) => canVote(set, it));
   document.getElementById("subbar").innerHTML = v === "set"
-    ? `<button class="pill" data-home="1">← All sets</button>${set.shipped ? `<span class="badge">SHIPPED ${esc(set.shipped)}</span>` : ""}` + FILTERS.map(([id, label]) => `<button class="pill ${filter===id?"on":""}" data-filter="${id}">${label}${id === "todo" ? ` (${todoN})` : ""}</button>`).join("")
+    ? `<button class="pill" data-home="1">← All sets</button>${set.shipped ? `<span class="badge">SHIPPED ${esc(set.shipped)}</span>` : ""}` + (!votable ? `<span class="note">Reference only · nothing to vote</span>` : "") + (!votable ? [] : FILTERS).map(([id, label]) => `<button class="pill ${filter===id?"on":""}" data-filter="${id}">${label}${id === "todo" ? ` (${todoN})` : ""}</button>`).join("")
     : "";
   document.getElementById("subbar").style.display = v === "set" ? "" : "none";
   const keep = window.scrollY, ae = document.activeElement, focusId = ae && ae.id;
@@ -545,7 +653,7 @@ window.addEventListener("storage", (e) => { if (e.key === LS_KEY) { store = load
     [ss, meta] = await Promise.all([fetch("data/sets.json", {cache:"no-cache"}).then((r) => r.json()), fetch("data/meta.json", {cache:"no-cache"}).then((r) => r.json()).catch(() => ({}))]);
     document.getElementById("h-note").textContent = "· online copy" + (meta.builtAt ? " · " + new Date(meta.builtAt).toLocaleDateString([], {month:"short", day:"numeric"}) : "");
   }
-  sets = ss; version = meta.version || "";
+  sets = normalize(ss); version = meta.version || "";
   pruneStale();
   route = parseRoute(); set = route.s || null; render();
   await sync(); render();
