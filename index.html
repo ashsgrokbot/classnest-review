@@ -77,6 +77,9 @@ details.shipped>summary{cursor:pointer;color:var(--muted);font-weight:700;paddin
 #lb .pinbox{font-size:13px;color:var(--muted);padding:0 10px}
 #lb-menu{display:none;padding:0 10px 4px;max-height:45vh;overflow:auto}#lb-menu.open{display:block}
 #lb .bottom .clr{flex:0 0 auto;font-weight:400}
+body.typing #copybar,body.typing #toast{display:none}
+textarea{scroll-margin:120px 0}#lb-menu textarea{min-height:64px;font-size:16px}#lb-menu .lbtyped{background:var(--no);border-color:var(--no);color:#fff;font-weight:700}
+.menu .wide.n{background:var(--no);border-color:var(--no);color:#fff;font-weight:700;min-height:44px}
 /* v2 set view: stage sections, NOW IN APP vs DRAFT */
 .headline{font-size:16px;font-weight:700;margin:8px 0 2px;line-height:1.35}
 details.more{margin:2px 0 4px}details.more>summary{cursor:pointer;color:var(--muted);font-size:13px}
@@ -135,7 +138,7 @@ const FILTERS = [["todo","To review"],["yes","Confirm"],["no","Remake"],["commen
 let sets = [], set = null, route = {view:"home"}, ultraQuery = "", version = "";
 let filter = localStorage.getItem(LS_KEY + ":filter2") || "todo";
 let menuFor = null;                 // key whose REMAKE reason menu is open (cards)
-const sticky = new Set();           // keys kept on screen while their comment box is being typed in
+const sticky = new Set();           // keys kept on screen once you start typing in them / open their REMAKE menu (until a vote, filter or page change)
 let store = loadLocal();
 
 function loadLocal(){ try { const s = JSON.parse(localStorage.getItem(LS_KEY) || "null"); return s && s.items ? s : {version:1, items:{}}; } catch { return {version:1, items:{}}; } }
@@ -408,7 +411,7 @@ function lbRender(){
   document.getElementById("lb-next").disabled = lb.i === lb.list.length - 1;
   const m = document.getElementById("lb-menu");
   m.classList.toggle("open", lb.menu);
-  m.innerHTML = lb.menu ? `<div class="note" style="margin:4px 0">Tap a reason: REMAKE is applied and you move on.</div><div class="chips stack">${REMAKE_TEMPLATES.map((r) => `<button data-lbreason="${esc(r)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}<button data-lbreason="">REMAKE (no reason)</button></div>` : "";
+  m.innerHTML = lb.menu ? `<label class="crow" style="margin-top:2px"><span class="note">Type your own reason (saved as you type)…</span><textarea placeholder="Your reason, e.g. arms look odd" data-comment="${esc(it.id)}" data-key="${esc(mk)}" rows="2" enterkeyhint="done">${esc(e.comment||"")}</textarea></label><div class="chips stack"><button data-lbreason="__typed" class="lbtyped">✕ REMAKE with my reason</button></div><div class="note" style="margin:6px 0 4px">…or tap a reason: REMAKE is applied and you move on.</div><div class="chips stack">${REMAKE_TEMPLATES.map((r) => `<button data-lbreason="${esc(r)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}<button data-lbreason="">REMAKE (no reason)</button></div>` : "";
   document.getElementById("lb-vote").innerHTML = !canVote(s, it) ? "" :
     `<button class="y ${e.vote==="yes"?"on":""}" data-lbvote="yes">✓ CONFIRM</button><button class="n ${e.vote==="no"||lb.menu?"on":""}" data-lbvote="no">✕ REMAKE…</button>${e.vote || clean(e.comment) ? `<button class="clr" data-lbvote="clear" aria-label="Clear verdict">Clear</button>` : ""}`;
 }
@@ -427,7 +430,7 @@ function lbRender(){
   });
   document.getElementById("lb-menu").addEventListener("click", (e) => {
     const b = e.target.closest("[data-lbreason]"); if (!b) return; const {s, it} = lb.list[lb.i];
-    remakeItem(s, it, b.dataset.lbreason); lb.menu = false; lbAdvance();
+    remakeItem(s, it, b.dataset.lbreason === "__typed" ? "" : b.dataset.lbreason); lb.menu = false; lbAdvance();
   });
   let sx = 0, sy = 0, multi = false;
   stage.addEventListener("touchstart", (e) => { multi = e.touches.length > 1; sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive:true});
@@ -438,6 +441,7 @@ function lbRender(){
   }, {passive:true});
   document.addEventListener("keydown", (e) => {
     if (!lb.open) return;
+    if (e.target.closest && e.target.closest("textarea,input") && e.key !== "Escape") return;   // typing: arrows move the caret
     if (e.key === "Escape") { if (lb.menu) { lb.menu = false; lbRender(); } else closeLb(); }
     else if (e.key === "ArrowRight") lbStep(1); else if (e.key === "ArrowLeft") lbStep(-1);
   });
@@ -492,9 +496,12 @@ function card(s, it){
   const b = badgeOf(s, it);
   const hist = (raw?.history||[]).length ? `<details class="hist"><summary>History (${raw.history.length})</summary><ul>${raw.history.map((h) => `<li>${esc(when(h.at))} — ${esc(h.reason)}</li>`).join("")}</ul></details>` : "";
   const img = cardImg(s, it);
-  const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Tap a reason: REMAKE is applied and the card moves on.</div><div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}<button data-reason="" data-id="${esc(it.id)}">REMAKE (reason in comment)</button></div><button class="clearbtn" data-menuclose="1">Cancel</button></div>` : "";
+  const box = (ph) => `<textarea placeholder="${esc(ph)}" data-comment="${esc(it.id)}" data-key="${esc(k)}" rows="2" enterkeyhint="done">${esc(e.comment||"")}</textarea>`;
+  const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Tap a reason: REMAKE is applied and the card moves on.</div><div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}</div>
+  <label class="crow"><span class="note">…or type your own reason (saved as you type)</span>${box("Your reason, e.g. arms look odd")}</label>
+  <button class="wide n" data-reason="__typed" data-id="${esc(it.id)}">✕ REMAKE with my reason</button><button class="wide" data-reason="" data-id="${esc(it.id)}">REMAKE (no reason)</button><button class="clearbtn" data-menuclose="1">Cancel</button></div>` : "";
   const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button></div>${menu}
-  <label class="crow"><span class="note">Comment (saved as you type)</span><textarea placeholder="Comment or your own remake reason" data-comment="${esc(it.id)}" data-key="${esc(k)}">${esc(e.comment||"")}</textarea></label>
+  ${menuFor === k ? "" : `<label class="crow"><span class="note">Comment (saved as you type)</span>${box("Comment or your own remake reason")}</label>`}
   ${e.vote || clean(e.comment) ? `<button class="clearbtn" data-clear="${esc(it.id)}">Clear verdict</button>` : ""}` : "";
   const head = b ? `<span class="sbadge ${b.cls}">${esc(b.t)}${done ? `<span class="done">${esc(done)}</span>` : ""}</span>` : done ? `<span class="badge">${esc(done)}</span>` : "";
   const ttl = it.role === "draft"
@@ -572,6 +579,8 @@ function parseRoute(){
 function go(hash){ if (location.hash !== hash) location.hash = hash; else onRoute(); }
 function onRoute(){ closeLb(); menuFor = null; sticky.clear(); route = parseRoute(); set = route.s || null; render(); window.scrollTo(0, 0); }
 const busyTyping = () => { const a = document.activeElement; return !!(a && a.dataset && a.dataset.comment); };
+function countText(all){ const y = all.filter((x)=>x.e.vote==="yes").length, n = all.filter((x)=>x.e.vote==="no").length, c = all.length - y - n;
+  return all.length ? [`${y} confirm`, `${n} remake`, c && `${c} comment`].filter(Boolean).join(" · ") + " to send" : "Nothing to send"; }
 function render(){
   const v = route.view;
   document.getElementById("tab-home").classList.toggle("on", v !== "summary");
@@ -592,7 +601,8 @@ function render(){
   if (focusId === "uq") { const i = document.getElementById("uq"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   if (typing) { const t = main.querySelector(`textarea[data-key="${CSS.escape(typing.k)}"]`); if (t) { t.focus({preventScroll:true}); try { t.setSelectionRange(typing.a, typing.b); } catch {} } }
   const all = pendingEntries(), y = all.filter((x)=>x.e.vote==="yes").length, n = all.filter((x)=>x.e.vote==="no").length, c = all.length - y - n;
-  document.getElementById("count").textContent = all.length ? [`${y} confirm`, `${n} remake`, c && `${c} comment`].filter(Boolean).join(" · ") + " to send" : "Nothing to send";
+  void y; void n; void c;
+  document.getElementById("count").textContent = countText(all);
   document.getElementById("copy").disabled = !all.length;
 }
 
@@ -601,9 +611,9 @@ document.addEventListener("click", (ev) => {
   const find = (id) => set.items.find((x) => x.id === id);
   if (t.dataset.set) { go("#/set/" + encodeURIComponent(t.dataset.set)); return; }
   if (t.dataset.home) { go("#/"); return; }
-  if (t.dataset.vote === "yes") { menuFor = null; confirmItem(set, find(t.dataset.id)); return; }
-  if (t.dataset.vote === "no") { const k = keyOf(set, find(t.dataset.id)); menuFor = menuFor === k ? null : k; render(); return; }
-  if (t.dataset.reason !== undefined) { remakeItem(set, find(t.dataset.id), t.dataset.reason); return; }
+  if (t.dataset.vote === "yes") { menuFor = null; const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); confirmItem(set, it); return; }
+  if (t.dataset.vote === "no") { const k = keyOf(set, find(t.dataset.id)); menuFor = menuFor === k ? null : k; if (menuFor) sticky.add(k); render(); return; }
+  if (t.dataset.reason !== undefined) { const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); remakeItem(set, it, t.dataset.reason === "__typed" ? "" : t.dataset.reason); return; }
   if (t.dataset.clear) { clearItem(set, find(t.dataset.clear)); return; }
   if (t.dataset.menuclose) { menuFor = null; render(); return; }
   if (t.dataset.filter) { filter = t.dataset.filter; localStorage.setItem(LS_KEY + ":filter2", filter); sticky.clear(); menuFor = null; render(); return; }
@@ -615,20 +625,28 @@ let commentTimers = {};
 document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "uq") { ultraQuery = t.value; render(); return; }
-  if (t.dataset.comment && set) {
-    const it = set.items.find((x) => x.id === t.dataset.comment), k = keyOf(set, it);
+  if (t.dataset.comment && t.dataset.key) {
+    const k = t.dataset.key, i = k.indexOf("/"), cs = sets.find((x) => x.id === k.slice(0, i)), it = cs?.items.find((x) => x.id === k.slice(i + 1));
+    if (!it) return;
     sticky.add(k);
-    const e = entryOf(set, it);
-    setEntry(set, it, {comment: t.value}, null, {quiet:true});
+    const e = entryOf(cs, it);
+    setEntry(cs, it, {comment: t.value}, null, {quiet:true});
     clearTimeout(commentTimers[k]);
     commentTimers[k] = setTimeout(() => { const raw = store.items[k]; if (raw && raw.history && clean(t.value) && !(raw.history[0]||{}).reason?.startsWith("comment")) { raw.history = [{at: Date.now(), reason: `comment: ${clean(t.value).slice(0,80)}`}, ...raw.history].slice(0, 20); saveLocal(); push(k); } }, 1200);
     const el = document.querySelector(`[data-saved="${CSS.escape(k)}"]`); if (el) el.textContent = "Saved on this device";
     void e;
   }
 });
+/* Typing: no re-render on blur (that used to drop the card mid-edit and eat the next tap); the card stays until a vote,
+   a filter change or leaving the page. Keep the box above the phone keyboard and hide the bottom bar meanwhile. */
+document.addEventListener("focusin", (ev) => {
+  const t = ev.target; if (!(t.dataset && t.dataset.comment)) return;
+  document.body.classList.add("typing");
+  setTimeout(() => { if (document.activeElement === t) t.scrollIntoView({block: "center", behavior: "smooth"}); }, 350);
+});
 document.addEventListener("focusout", (ev) => {
-  const t = ev.target;
-  if (t.dataset && t.dataset.comment) setTimeout(() => { if (busyTyping()) return; sticky.clear(); render(); }, 250);
+  const t = ev.target; if (!(t.dataset && t.dataset.comment)) return;
+  setTimeout(() => { if (!busyTyping()) { document.body.classList.remove("typing"); const all = pendingEntries(); document.getElementById("count").textContent = countText(all); document.getElementById("copy").disabled = !all.length; } }, 150);
 });
 document.getElementById("tab-home").onclick = () => go("#/");
 document.getElementById("tab-summary").onclick = () => go("#/summary");
