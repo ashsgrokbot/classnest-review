@@ -71,6 +71,7 @@ pre{white-space:pre-wrap;background:#10131b;border:1px solid var(--line);border-
 .wide{width:100%;margin-top:6px}
 .clearbtn{width:100%;margin-top:6px;background:transparent;color:var(--muted);border-style:dashed}
 details.shipped>summary{cursor:pointer;color:var(--muted);font-weight:700;padding:8px 0;list-style:none}details.shipped>summary::before{content:"▸ "}details.shipped[open]>summary::before{content:"▾ "}
+.homesum{background:var(--card);border:1px solid #4ade80;border-radius:14px;padding:4px 10px 10px;margin-bottom:12px}.homesum .sumhead{margin:8px 0;color:var(--fg);justify-content:space-between}.homesum #sumcopy{min-height:44px;padding:8px 22px;background:#16a34a;border-color:#16a34a;color:#fff}.homesum pre{margin:0;font-size:14px}.homesum-empty{margin:2px 0 10px}
 #copy[disabled],#sumcopy[disabled]{opacity:.4;cursor:default}
 #toast{position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:40;background:#1f2937;border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:none;gap:8px;align-items:center;max-width:520px;margin:0 auto}
 #toast.open{display:flex}body.lock #toast{top:calc(64px + env(safe-area-inset-top));bottom:auto}#toast span{flex:1;font-size:14px}
@@ -343,7 +344,7 @@ async function copyText(){
     toast(`Copied ${list.length} — paste it in chat. Cleared from the queue.`);
     render();
   } else {
-    go("#/summary");
+    if (!document.getElementById("fallback")) go("#/summary");     // Home and Summary both have the fallback box in place
     const f = document.getElementById("fallback"); if (f) { f.classList.add("open"); const t = f.querySelector("textarea"); t.focus(); t.setSelectionRange(0, t.value.length); }
   }
 }
@@ -464,7 +465,7 @@ function renderHome(){
   const live = review.filter((s) => !s.shipped && !s.done), shipped = review.filter((s) => s.shipped || s.done);
   const q = ultraQuery.trim().toLowerCase();
   const shown = ultras.filter((s) => !q || s.name.toLowerCase().includes(q) || String(s.num) === q.replace(/^#?0*/, "") || s.blurb.toLowerCase().includes(q));
-  return `${STATIC ? `<div class="note">Online review copy of ClassNest v${esc(version || "?")} art. Votes are saved in this browser; tap Copy and paste the text in chat.</div>` : `<div class="appcard"><div><div class="title">ClassNest app (preview)</div><div class="note">The real app from the local clone, served at /app/. Its saved classes live in this browser only.</div></div><a class="btn" href="/app/" target="_blank" rel="noopener">Open app ↗</a></div>`}
+  return `${homeSummary()}${STATIC ? `<div class="note">Online review copy of ClassNest v${esc(version || "?")} art. Votes are saved in this browser; tap Copy and paste the text in chat.</div>` : `<div class="appcard"><div><div class="title">ClassNest app (preview)</div><div class="note">The real app from the local clone, served at /app/. Its saved classes live in this browser only.</div></div><a class="btn" href="/app/" target="_blank" rel="noopener">Open app ↗</a></div>`}
   <h2 id="h-waiting">Waiting for your vote</h2><div class="grid" id="waiting">${live.map(setCard).join("") || `<p class="empty">Nothing waiting. 🎉</p>`}</div>
   ${shipped.length ? `<details class="shipped" id="done"><summary>Done (${shipped.length})</summary><div class="grid">${shipped.map(setCard).join("")}</div></details>` : ""}
   <h2 id="h-ultras">Browse all Ultras (current art, nothing to vote) · ${ultras.length}</h2>
@@ -554,6 +555,15 @@ function renderSet(){
   const msg = filter === "todo" ? (set.shipped ? `Everything here shipped (${esc(set.shipped)}). Nothing left to review.` : "Nothing left to review here ✓") : "Nothing here for this filter.";
   return html + `<p class="empty">${msg}</p>`;
 }
+/* The tap-to-copy block (Summary tab and top of Home): same text, same copy-then-clear, same fallback. */
+function pendingBlock(text){
+  return `<h2 class="sumhead">Pending — tap to copy <button id="sumcopy">Copy</button></h2><pre id="sumtext" title="Tap to copy">${esc(text)}</pre>
+  <div id="fallback"><div class="note">Copy didn't work here. Select the text below and copy it, then tap “I copied it”.</div><textarea readonly>${esc(text)}</textarea><button class="wide" id="manualsent">I copied it — clear these</button></div>`;
+}
+function homeSummary(){
+  const all = pendingEntries(), text = formatApprovals(all);
+  return all.length ? `<div class="homesum" id="homesum">${pendingBlock(text)}</div>` : `<p class="note homesum-empty" id="homesum">Nothing to send yet</p>`;
+}
 let summaryList = [];
 function renderSummary(){
   const all = pendingEntries(), text = formatApprovals(all);
@@ -566,8 +576,7 @@ function renderSummary(){
   ${sec("CONFIRM", all.filter((x) => x.e.vote==="yes"), (x) => clean(x.e.comment))}
   ${sec("REMAKE", all.filter((x) => x.e.vote==="no"), remakeNote)}
   ${sec("COMMENT", all.filter((x) => !x.e.vote && clean(x.e.comment)), (x) => clean(x.e.comment))}
-  ${all.length ? `<h2 class="sumhead">Pending — tap to copy <button id="sumcopy">Copy</button></h2><pre id="sumtext" title="Tap to copy">${esc(text)}</pre>
-  <div id="fallback"><div class="note">Copy didn't work here. Select the text below and copy it, then tap “I copied it”.</div><textarea readonly>${esc(text)}</textarea><button class="wide" id="manualsent">I copied it — clear these</button></div>` : ""}
+  ${all.length ? pendingBlock(text) : ""}
   ${sent.length ? `<details class="shipped"><summary>Sent, waiting on the bot (${sent.length})</summary>${sent.slice(0, 40).map((x) => `<div class="note">${esc(when(x.e.sent.at))} · ${esc(x.s.title)}: ${esc(x.it.id)} — ${x.e.sent.vote==="yes"?"CONFIRM":x.e.sent.vote==="no"?"REMAKE":"COMMENT"}${(x.e.sent.reasons||[]).length ? " · " + esc(x.e.sent.reasons.join("; ")) : ""}</div>`).join("")}</details>` : ""}`;
 }
 function parseRoute(){
