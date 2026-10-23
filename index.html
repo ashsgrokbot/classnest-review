@@ -27,8 +27,8 @@ h2{font-size:14px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;
 .badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;border-radius:6px;padding:2px 6px;background:var(--ship);color:#1a1205;vertical-align:middle}
 .card>.badge{position:absolute;top:8px;left:8px;z-index:1}
 .status{font-size:12px;font-weight:800;letter-spacing:.05em;margin-top:2px}.status.yes{color:var(--yes)}.status.no{color:#f87171}
-.vote{display:flex;gap:8px;margin:10px 0 6px}.vote button{flex:1;min-height:44px;font-weight:700}
-.vote .y.on,#lb .y.on{background:var(--yes);border-color:var(--yes);color:#fff}.vote .n.on,#lb .n.on{background:var(--no);border-color:var(--no);color:#fff}
+.vote{display:flex;gap:6px;margin:10px 0 6px}.vote button{flex:1 1 0;min-width:0;min-height:44px;font-weight:700;padding:7px 6px;white-space:nowrap;font-size:14px}
+.vote .y.on,#lb .y.on{background:var(--yes);border-color:var(--yes);color:#fff}.vote .r,#lb .r{border-color:#7f1d1d;color:#fca5a5}.vote .r.on,#lb .r.on{background:#7f1d1d;border-color:#ef4444;color:#fff}.vote .n.on,#lb .n.on{background:var(--no);border-color:var(--no);color:#fff}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.chips button{font-size:13px;padding:5px 10px;min-height:32px}
 .chips button.on{background:#7f1d1d;border-color:#f87171;color:#fff;font-weight:600}
 textarea{width:100%;min-height:56px;font:inherit;color:var(--fg);background:#10131b;border:1px solid var(--line);border-radius:10px;padding:8px}
@@ -93,7 +93,10 @@ details.more{margin:2px 0 4px}details.more>summary{cursor:pointer;color:var(--mu
 .sbadge.ref{background:#374151;color:#e5e7eb}
 .sbadge .done{float:right;font-weight:800;font-size:12px;background:var(--ship);color:#1a1205;border-radius:6px;padding:1px 6px}
 .card.now{border-color:#6b7280;background:#15171d}.card.now .title{color:#d1d5db}
-.card.now.yes{border-color:var(--yes)}.vote.keep button{flex:1}
+.card.now.yes{border-color:var(--yes)}
+.card.reject{border-color:#7f1d1d!important;border-style:dashed}.card.reject .media{opacity:.4;filter:grayscale(.7)}.card.reject .ttl,.card.reject .desc{opacity:.6}.tile.reject{border-color:#7f1d1d;opacity:.55}
+@media(max-width:699px){#subbar{gap:5px}#subbar .pill{padding:5px 8px}}
+.rtag{display:inline-block;margin-left:8px;font-size:12px;font-weight:900;letter-spacing:.06em;border-radius:6px;padding:1px 7px;background:#dc2626;color:#fff;vertical-align:middle}.pin.rej{color:#f87171;font-weight:700}.vote.keep button{flex:1}
 .card.draft{border-color:#a16207}.card.draft.yes{border-color:var(--yes)}.card.draft.no{border-color:var(--no)}
 .letter{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#facc15;color:#1a1205;font-weight:900;margin-right:8px;flex:none}
 .ttl{display:flex;align-items:center;gap:0;flex-wrap:wrap;font-weight:800;font-size:16px}
@@ -136,7 +139,7 @@ const REMAKE_TEMPLATES = [
   "not enough change", "style doesn't match", "angry / scary, not cute", "off-model / drift", "too foal-like",
   "anatomy (extra legs / extra horse)", "text or letters", "too soft / blurry", "lost the pose", "colours drifted",
 ];
-const FILTERS = [["todo","To review"],["yes","Confirm"],["no","Remake"],["comment","Commented"],["sent","Sent"],["done","Shipped / done"],["all","All"]];
+const FILTERS = [["todo","To review"],["yes","Confirm"],["no","Remake"],["reject","Reject"],["comment","Commented"],["sent","Sent"],["done","Shipped / done"],["all","All"]];
 let sets = [], set = null, route = {view:"home"}, ultraQuery = "", version = "";
 let filter = localStorage.getItem(LS_KEY + ":filter2") || "todo";
 let menuFor = null;                 // key whose REMAKE reason menu is open (cards)
@@ -146,6 +149,8 @@ let store = loadLocal();
 function loadLocal(){ try { const s = JSON.parse(localStorage.getItem(LS_KEY) || "null"); return s && s.items ? s : {version:1, items:{}}; } catch { return {version:1, items:{}}; } }
 function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch {} }
 const keyOf = (s, it) => `${s.id}/${it.id}`;
+const VOTE_NAME = {yes:"CONFIRM", no:"REMAKE", reject:"REJECT"};
+const vName = (v) => VOTE_NAME[v] || "COMMENT";
 /* ---- v2: stage model. Items may carry stage (1-3), role ("current" | "draft" | "reference"), letter, pick
    ("bot" | "alt" | "runner-up"), desc. Auto sets get them from set.json "itemRules" (first regex match on the
    file wins) and "autoLetters". Ultra sets are reference only: s1-s3 are the current art, no voting. */
@@ -221,6 +226,9 @@ function doneOf(s, it){
   if (e?.shipped) return `SHIPPED ${e.shipped}`;
   return "";
 }
+/* Rejected by the set file (baseline, e.g. done: "rejected: …" or rejected: "reason") or by your REJECT vote. */
+const baseRejected = (it) => !!(it.rejected || /^rejected/i.test(it.done || ""));
+const isRejected = (s, it) => baseRejected(it) || (it.role !== "keep" && entryOf(s, it).vote === "reject" && !doneOf(s, it));
 const canVote = (s, it) => !(s.noVote || it.noVote || it.role === "current" || it.role === "reference");
 const keepOf = (s, st) => s.items.find((x) => x.role === "keep" && x.stage === st);
 const keepChosen = (s, st) => { const k = keepOf(s, st); return !!(k && !doneOf(s, k) && entryOf(s, k).vote === "yes"); };
@@ -243,7 +251,7 @@ function tomb(prev, it, at, sent){
   const t = {cleared:true, updatedAt:at, stamp: it.stamp || prev?.stamp};
   if (sent && isActive(prev)) t.sent = {vote: prev.vote ?? null, reasons: prev.reasons||[], comment: prev.comment||"", at};
   if (prev?.shipped) t.shipped = prev.shipped;
-  t.history = [{at, reason: t.sent ? `SENT ${t.sent.vote==="yes"?"CONFIRM":t.sent.vote==="no"?"REMAKE":"COMMENT"}` : "cleared"}, ...(prev?.history||[])].slice(0, 20);
+  t.history = [{at, reason: t.sent ? `SENT ${vName(t.sent.vote)}` : "cleared"}, ...(prev?.history||[])].slice(0, 20);
   return t;
 }
 /* Write a verdict. An empty verdict becomes a tombstone (so the two-way sync can't resurrect the old one). */
@@ -263,10 +271,10 @@ function restore(k, s, it, prev, others = []){
   for (const o of others) { store.items[o.k] = o.prev ? {...o.prev, updatedAt: now} : {cleared:true, stamp: o.it.stamp, updatedAt: now, history: []}; push(o.k); }
   saveLocal(); push(k); render(); if (lb.open) lbRender();
 }
-/* Items whose CONFIRM conflicts with this one: Keep current <-> the drafts of the same stage. */
+/* Items whose CONFIRM conflicts with this one: one CONFIRM per stage (Keep current or one draft). REJECT has no rivals. */
 function rivals(s, it){
   if (it.role === "keep") return s.items.filter((x) => x.role === "draft" && x.stage === it.stage);
-  if (it.role === "draft" && it.stage) return s.items.filter((x) => x.role === "keep" && x.stage === it.stage);
+  if (it.role === "draft" && it.stage) return s.items.filter((x) => x !== it && (x.role === "keep" || x.role === "draft") && x.stage === it.stage);
   return [];
 }
 function confirmItem(s, it){
@@ -283,6 +291,14 @@ function remakeItem(s, it, reason){
   menuFor = null;
   setEntry(s, it, {vote:"no", reasons}, reason ? `REMAKE: ${reason}` : "REMAKE");
   toast(`REMAKE · ${it.title}${reason ? " — " + reason : ""}`, () => restore(k, s, it, prev));
+}
+/* REJECT: "I don't want this one". Any number per stage; it replaces this item's CONFIRM/REMAKE (one verdict per item). Tap again = un-reject. */
+function rejectItem(s, it){
+  const k = keyOf(s, it), prev = snapshot(k), e = entryOf(s, it);
+  menuFor = null;
+  if (e.vote === "reject") { setEntry(s, it, {vote:null, reasons:[]}, "un-rejected"); toast(`Un-rejected · ${nameOf(it)}`, () => restore(k, s, it, prev)); return; }
+  setEntry(s, it, {vote:"reject", reasons:[]}, e.vote === "yes" ? "REJECT (confirm cleared)" : "REJECT");
+  toast(`REJECT · ${nameOf(it)}${e.vote === "yes" ? " (confirm cleared)" : ""}`, () => restore(k, s, it, prev));
 }
 function clearItem(s, it){
   const k = keyOf(s, it), prev = snapshot(k);
@@ -310,7 +326,7 @@ function pruneStale(){
   for (const s of sets) for (const it of s.items) { const k = keyOf(s, it), e = store.items[k]; if (stale(e, it)) delete store.items[k]; }
 }
 
-/* ---------- Copy text (Number Pictures shape): version line, then CONFIRM / REMAKE / COMMENT buckets of "Section: id, id — note" ---------- */
+/* ---------- Copy text (Number Pictures shape): version line, then CONFIRM / REMAKE / REJECT / COMMENT buckets of "Section: id, id — note" ---------- */
 function pendingEntries(){
   const out = [];
   for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isActive(e) && !doneOf(s, it) && canVote(s, it)) out.push({s, item:it, e, k: keyOf(s, it)}); }
@@ -331,6 +347,7 @@ function formatApprovals(list = pendingEntries()){
   const b = (title, body) => { if (body.length) lines.push(title, ...body); };
   b("CONFIRM", bySection(list.filter((x) => x.e.vote === "yes"), (x) => clean(x.e.comment)));
   b("REMAKE", bySection(list.filter((x) => x.e.vote === "no"), remakeNote));
+  b("REJECT", bySection(list.filter((x) => x.e.vote === "reject"), (x) => clean(x.e.comment)));
   b("COMMENT", bySection(list.filter((x) => !x.e.vote && clean(x.e.comment)), (x) => clean(x.e.comment)));
   return lines.join("\n");
 }
@@ -384,8 +401,9 @@ function pinLine(s, it){
   const raw = rawOf(s, it), e = entryOf(s, it);
   if (e.vote === "no") return {cls:"", t:`REMAKE${(e.reasons||[]).length ? " · " + e.reasons[e.reasons.length - 1] : ""}${clean(e.comment) ? " · " + clean(e.comment) : ""}`};
   if (e.vote === "yes") return {cls:"yes", t:`CONFIRM${clean(e.comment) ? " · " + clean(e.comment) : ""}`};
+  if (e.vote === "reject") return {cls:"rej", t:`REJECT · you don't want this one${clean(e.comment) ? " · " + clean(e.comment) : ""}`};
   if (clean(e.comment)) return {cls:"h", t:`💬 ${clean(e.comment)}`};
-  if (isSent(raw)) { const v = raw.sent; return {cls:"h", t:`Sent ${v.vote==="yes"?"CONFIRM":v.vote==="no"?"REMAKE":"comment"}${(v.reasons||[]).length ? " · " + v.reasons.join("; ") : ""} · ${when(v.at)}`}; }
+  if (isSent(raw)) { const v = raw.sent; return {cls:"h", t:`Sent ${v.vote ? vName(v.vote) : "comment"}${(v.reasons||[]).length ? " · " + v.reasons.join("; ") : ""} · ${when(v.at)}`}; }
   const h = (raw?.history||[])[0]; if (h) return {cls:"h", t:`${h.reason} · ${when(h.at)}`};
   return null;
 }
@@ -427,7 +445,7 @@ function lbRender(){
   document.getElementById("lb-cap").innerHTML = `<b>${esc(nameOf(it))}</b>${bd ? `<span class="lbbadge ${bd.cls}">${esc(bdText)}</span> ` : ""}<span class="note">${lb.i + 1} / ${lb.list.length} · ${esc(s.title)}${done ? ` · <span class="badge">${esc(done)}</span>` : ""}</span>`;
   const reasons = e.vote === "no" ? [...(e.reasons||[]), clean(e.comment)].filter(Boolean).join("; ") : clean(e.comment);
   const h = (raw?.history||[])[0];
-  document.getElementById("lb-pin").innerHTML = [e.vote ? `<b class="${e.vote==="yes"?"pin yes":"pin"}">${e.vote==="yes"?"CONFIRM":"REMAKE"}</b>${reasons ? " · " + esc(reasons) : ""}` : reasons ? "💬 " + esc(reasons) : "",
+  document.getElementById("lb-pin").innerHTML = [e.vote ? `<b class="${e.vote==="yes"?"pin yes":"pin"}">${vName(e.vote)}</b>${reasons ? " · " + esc(reasons) : ""}` : reasons ? "💬 " + esc(reasons) : "",
     h ? `<div>Last: ${esc(h.reason)} · ${esc(when(h.at))}</div>` : ""].filter(Boolean).join("");
   document.getElementById("lb-prev").disabled = lb.i === 0;
   document.getElementById("lb-next").disabled = lb.i === lb.list.length - 1;
@@ -435,7 +453,7 @@ function lbRender(){
   m.classList.toggle("open", lb.menu);
   m.innerHTML = lb.menu ? `<label class="crow" style="margin-top:2px"><span class="note">Type your own reason (saved as you type)…</span><textarea placeholder="Your reason, e.g. arms look odd" data-comment="${esc(it.id)}" data-key="${esc(mk)}" rows="2" enterkeyhint="done">${esc(e.comment||"")}</textarea></label><div class="chips stack"><button data-lbreason="__typed" class="lbtyped">✕ REMAKE with my reason</button></div><div class="note" style="margin:6px 0 4px">…or tap a reason: REMAKE is applied and you move on.</div><div class="chips stack">${REMAKE_TEMPLATES.map((r) => `<button data-lbreason="${esc(r)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}<button data-lbreason="">REMAKE (no reason)</button></div>` : "";
   document.getElementById("lb-vote").innerHTML = !canVote(s, it) ? "" :
-    `<button class="y ${e.vote==="yes"?"on":""}" data-lbvote="yes">✓ CONFIRM</button><button class="n ${e.vote==="no"||lb.menu?"on":""}" data-lbvote="no">✕ REMAKE…</button>${e.vote || clean(e.comment) ? `<button class="clr" data-lbvote="clear" aria-label="Clear verdict">Clear</button>` : ""}`;
+    `<button class="y ${e.vote==="yes"?"on":""}" data-lbvote="yes">✓ CONFIRM</button><button class="n ${e.vote==="no"||lb.menu?"on":""}" data-lbvote="no">✕ REMAKE…</button>${it.role === "draft" || !it.stage ? `<button class="r ${e.vote==="reject"?"on":""}" data-lbvote="reject" aria-pressed="${e.vote==="reject"}">⊘ REJECT</button>` : ""}${e.vote || clean(e.comment) ? `<button class="clr" data-lbvote="clear" aria-label="Clear verdict">Clear</button>` : ""}`;
 }
 (() => {
   const el = document.getElementById("lb"), stage = document.getElementById("lb-stage");
@@ -448,6 +466,7 @@ function lbRender(){
     const b = e.target.closest("[data-lbvote]"); if (!b) return; const {s, it} = lb.list[lb.i];
     if (b.dataset.lbvote === "yes") { confirmItem(s, it); lbAdvance(); }
     else if (b.dataset.lbvote === "no") { lb.menu = !lb.menu; lbRender(); }
+    else if (b.dataset.lbvote === "reject") { const was = entryOf(s, it).vote === "reject"; rejectItem(s, it); if (was) lbRender(); else lbAdvance(); }
     else { clearItem(s, it); lbRender(); }
   });
   document.getElementById("lb-menu").addEventListener("click", (e) => {
@@ -471,15 +490,15 @@ function lbRender(){
 
 /* ---------- Views ---------- */
 function stats(s){
-  let todo = 0, y = 0, n = 0, c = 0, sent = 0;
+  let todo = 0, y = 0, n = 0, r = 0, c = 0, sent = 0;
   for (const it of s.items) {
     if (inQueue(s, it)) todo++;
     const e = rawOf(s, it); if (doneOf(s, it)) continue;
-    if (isActive(e)) { if (e.vote === "yes") y++; else if (e.vote === "no") n++; else c++; } else if (isSent(e)) sent++;
+    if (isActive(e)) { if (e.vote === "yes") y++; else if (e.vote === "no") n++; else if (e.vote === "reject") r++; else c++; } else if (isSent(e)) sent++;
   }
-  return {todo, y, n, c, sent};
+  return {todo, y, n, r, c, sent};
 }
-function statLine(s){ const t = stats(s), ch = s.staged && s.kind !== "ultra" ? changing(s) : []; return [ch.length && `New ${names(ch)}`, t.todo ? `${t.todo} to review` : "nothing to review", t.y && `${t.y} confirm`, t.n && `${t.n} remake`, t.c && `${t.c} comment`, t.sent && `${t.sent} sent`].filter(Boolean).join(" · "); }
+function statLine(s){ const t = stats(s), ch = s.staged && s.kind !== "ultra" ? changing(s) : []; return [ch.length && `New ${names(ch)}`, t.todo ? `${t.todo} to review` : "nothing to review", t.y && `${t.y} confirm`, t.n && `${t.n} remake`, t.r && `${t.r} reject`, t.c && `${t.c} comment`, t.sent && `${t.sent} sent`].filter(Boolean).join(" · "); }
 function setCard(s){ return `<button class="setcard" data-set="${esc(s.id)}"><img src="${cover(s)}" alt="" loading="lazy"><div><div class="t">${esc(s.title)} ${s.shipped ? `<span class="badge">SHIPPED ${esc(s.shipped)}</span>` : s.partial ? `<span class="badge">SHIPPED ${esc(s.partial)}</span>` : ""}</div><div class="note">${esc(statLine(s))}</div></div></button>`; }
 function renderHome(){
   const review = sets.filter((s) => s.kind !== "ultra"), ultras = sets.filter((s) => s.kind === "ultra");
@@ -502,7 +521,7 @@ function passes(s, it){
   const raw = rawOf(s, it), e = entryOf(s, it);
   if (filter === "todo") return inQueue(s, it);
   if (filter === "sent") return isSent(raw);
-  if (filter === "yes") return e.vote === "yes"; if (filter === "no") return e.vote === "no";
+  if (filter === "yes") return e.vote === "yes"; if (filter === "no") return e.vote === "no"; if (filter === "reject") return e.vote === "reject";
   if (filter === "comment") return !!clean(e.comment);
   return true;
 }
@@ -529,21 +548,22 @@ function card(s, it){
   const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Tap a reason: REMAKE is applied and the card moves on.</div><div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}</div>
   <label class="crow"><span class="note">…or type your own reason (saved as you type)</span>${box("Your reason, e.g. arms look odd")}</label>
   <button class="wide n" data-reason="__typed" data-id="${esc(it.id)}">✕ REMAKE with my reason</button><button class="wide" data-reason="" data-id="${esc(it.id)}">REMAKE (no reason)</button><button class="clearbtn" data-menuclose="1">Cancel</button></div>` : "";
-  const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button></div>${menu}
+  const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button><button class="r ${e.vote==="reject"?"on":""}" data-vote="reject" data-id="${esc(it.id)}" aria-pressed="${e.vote==="reject"}">⊘ REJECT</button></div>${menu}
   ${menuFor === k ? "" : `<label class="crow"><span class="note">Comment (saved as you type)</span>${box("Comment or your own remake reason")}</label>`}
   ${e.vote || clean(e.comment) ? `<button class="clearbtn" data-clear="${esc(it.id)}">Clear verdict</button>` : ""}` : "";
-  const head = b ? `<span class="sbadge ${b.cls}">${esc(b.t)}${done ? `<span class="done">${esc(done)}</span>` : ""}</span>` : done ? `<span class="badge">${esc(done)}</span>` : "";
+  const rej = isRejected(s, it), rtag = rej ? `<span class="rtag">REJECTED</span>` : "";
+  const head = b ? `<span class="sbadge ${b.cls}">${esc(b.t)}${rtag}${done ? `<span class="done">${esc(done)}</span>` : ""}</span>` : done ? `<span class="badge">${esc(done)}</span>${rtag}` : rtag;
   const ttl = it.role === "draft"
     ? `<div class="ttl"><span class="letter">${esc(it.letter || "?")}</span>${esc(nameOf(it))}${pickTag(it)}</div>${it.desc ? `<div class="desc">${esc(it.desc)}</div>` : ""}`
     : `<div class="title">${it.kind === "video" ? "▶ " : ""}${esc(nameOf(it))}</div>`;
-  return `<div class="card ${it.role || ""} ${e.vote||""}">${head}
+  return `<div class="card ${it.role || ""} ${e.vote||""} ${rej && e.vote !== "reject" ? "reject" : ""}" ${rej ? `data-rejected="1"` : ""}>${head}
   <img class="media" src="${img}" alt="${esc(nameOf(it))}" loading="lazy" data-zoom="${esc(it.id)}">
   <div class="body">${ttl}${pin ? `<div class="pin ${pin.cls}">${esc(pin.t)}</div>` : ""}${it.note ? `<div class="note">${esc(it.note)}</div>` : ""}
   ${votes}${hist}<div class="saved" data-saved="${esc(k)}"></div></div></div>`;
 }
 function tile(s, it){
   const e = entryOf(s, it);
-  return `<button class="tile ${e.vote||""}" data-zoom="${esc(it.id)}"><img src="${thumb(s, it)}" alt="" loading="lazy"><div class="cap">${esc(nameOf(it))}</div></button>`;
+  return `<button class="tile ${e.vote||""} ${isRejected(s, it) && e.vote !== "reject" ? "reject" : ""}" data-zoom="${esc(it.id)}"><img src="${thumb(s, it)}" alt="" loading="lazy"><div class="cap">${esc(nameOf(it))}</div></button>`;
 }
 let shownOrder = [];                 // items in the order they are on screen (lightbox ‹ › follows it)
 function visibleItems(){ return shownOrder.map((x) => x.it); }
@@ -557,12 +577,12 @@ function renderStaged(){
     const shown = drafts.filter((it) => passes(s, it)), nm = STAGE_NAMES[st];
     const open = drafts.filter((it) => !doneOf(s, it)), shipCur = cur.find((it) => it.shipped);
     const sub = s.kind === "ultra" ? "In the app now."
-      : open.length ? `${open.length} draft${open.length === 1 ? "" : "s"}. Pick one to replace the current ${nm}, or REMAKE.`
+      : open.length ? `${open.length} draft${open.length === 1 ? "" : "s"}. Pick one to replace the current ${nm}, REMAKE, or REJECT the ones you don't want.`
       : shipCur ? `Shipped ${shipCur.shipped}: the new ${nm} is in the app now. Nothing left to vote here.`
       : drafts.length ? `Decided. Nothing left to vote here (${s.shipped ? `set shipped ${s.shipped}` : "drafts closed"}).`
       : (s.shipped ? `Not changed in ${s.shipped}. Shown so you can check the style.` : "Not changing. Shown so you can check the style.");
     order.push(...cur, ...shown);
-    html += `<section class="stg" data-stage="${st}"><h2 class="stagehead">Stage ${st} · ${nm}</h2><div class="note">${esc(sub)}</div><div class="grid">${cur.map((it) => nowCard(s, it)).join("")}${shown.map((it) => card(s, it)).join("")}</div>${drafts.length && !shown.length ? `<p class="empty small">${filter === "todo" ? "All drafts here have a vote ✓ (see Confirm / Remake / Sent)" : "No drafts for this filter."}</p>` : ""}</section>`;
+    html += `<section class="stg" data-stage="${st}"><h2 class="stagehead">Stage ${st} · ${nm}</h2><div class="note">${esc(sub)}</div><div class="grid">${cur.map((it) => nowCard(s, it)).join("")}${shown.map((it) => card(s, it)).join("")}</div>${drafts.length && !shown.length ? `<p class="empty small">${filter === "todo" ? "All drafts here have a vote ✓ (see Confirm / Remake / Reject / Sent)" : "No drafts for this filter."}</p>` : ""}</section>`;
   }
   for (const g of s.groups || []) {
     const items = s.items.filter((it) => !it.stage && (it.group || "_") === g.id && (!canVote(s, it) || passes(s, it)));
@@ -608,9 +628,10 @@ function renderSummary(){
   return `${all.length ? "" : `<p class="empty">Nothing to send. Everything you voted on has been copied or shipped.</p>`}
   ${sec("CONFIRM", all.filter((x) => x.e.vote==="yes"), (x) => clean(x.e.comment))}
   ${sec("REMAKE", all.filter((x) => x.e.vote==="no"), remakeNote)}
+  ${sec("REJECT", all.filter((x) => x.e.vote==="reject"), (x) => clean(x.e.comment))}
   ${sec("COMMENT", all.filter((x) => !x.e.vote && clean(x.e.comment)), (x) => clean(x.e.comment))}
   ${all.length ? pendingBlock(text) : ""}
-  ${sent.length ? `<details class="shipped"><summary>Sent, waiting on the bot (${sent.length})</summary>${sent.slice(0, 40).map((x) => `<div class="note">${esc(when(x.e.sent.at))} · ${esc(x.s.title)}: ${esc(x.it.id)} — ${x.e.sent.vote==="yes"?"CONFIRM":x.e.sent.vote==="no"?"REMAKE":"COMMENT"}${(x.e.sent.reasons||[]).length ? " · " + esc(x.e.sent.reasons.join("; ")) : ""}</div>`).join("")}</details>` : ""}`;
+  ${sent.length ? `<details class="shipped"><summary>Sent, waiting on the bot (${sent.length})</summary>${sent.slice(0, 40).map((x) => `<div class="note">${esc(when(x.e.sent.at))} · ${esc(x.s.title)}: ${esc(x.it.id)} — ${vName(x.e.sent.vote)}${(x.e.sent.reasons||[]).length ? " · " + esc(x.e.sent.reasons.join("; ")) : ""}</div>`).join("")}</details>` : ""}`;
 }
 function parseRoute(){
   const h = location.hash.replace(/^#\/?/, "");
@@ -621,8 +642,8 @@ function parseRoute(){
 function go(hash){ if (location.hash !== hash) location.hash = hash; else onRoute(); }
 function onRoute(){ closeLb(); menuFor = null; sticky.clear(); route = parseRoute(); set = route.s || null; render(); window.scrollTo(0, 0); }
 const busyTyping = () => { const a = document.activeElement; return !!(a && a.dataset && a.dataset.comment); };
-function countText(all){ const y = all.filter((x)=>x.e.vote==="yes").length, n = all.filter((x)=>x.e.vote==="no").length, c = all.length - y - n;
-  return all.length ? [`${y} confirm`, `${n} remake`, c && `${c} comment`].filter(Boolean).join(" · ") + " to send" : "Nothing to send"; }
+function countText(all){ const y = all.filter((x)=>x.e.vote==="yes").length, n = all.filter((x)=>x.e.vote==="no").length, r = all.filter((x)=>x.e.vote==="reject").length, c = all.length - y - n - r;
+  return all.length ? [`${y} confirm`, `${n} remake`, r && `${r} reject`, c && `${c} comment`].filter(Boolean).join(" · ") + " to send" : "Nothing to send"; }
 function render(){
   const v = route.view;
   document.getElementById("tab-home").classList.toggle("on", v !== "summary");
@@ -642,8 +663,7 @@ function render(){
   window.scrollTo(0, keep);
   if (focusId === "uq") { const i = document.getElementById("uq"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   if (typing) { const t = main.querySelector(`textarea[data-key="${CSS.escape(typing.k)}"]`); if (t) { t.focus({preventScroll:true}); try { t.setSelectionRange(typing.a, typing.b); } catch {} } }
-  const all = pendingEntries(), y = all.filter((x)=>x.e.vote==="yes").length, n = all.filter((x)=>x.e.vote==="no").length, c = all.length - y - n;
-  void y; void n; void c;
+  const all = pendingEntries();
   document.getElementById("count").textContent = countText(all);
   document.getElementById("copy").disabled = !all.length;
 }
@@ -654,6 +674,7 @@ document.addEventListener("click", (ev) => {
   if (t.dataset.set) { go("#/set/" + encodeURIComponent(t.dataset.set)); return; }
   if (t.dataset.home) { go("#/"); return; }
   if (t.dataset.vote === "yes") { menuFor = null; const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); confirmItem(set, it); return; }
+  if (t.dataset.vote === "reject") { const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); rejectItem(set, it); return; }
   if (t.dataset.vote === "no") { const k = keyOf(set, find(t.dataset.id)); menuFor = menuFor === k ? null : k; if (menuFor) sticky.add(k); render(); return; }
   if (t.dataset.reason !== undefined) { const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); remakeItem(set, it, t.dataset.reason === "__typed" ? "" : t.dataset.reason); return; }
   if (t.dataset.clear) { clearItem(set, find(t.dataset.clear)); return; }
