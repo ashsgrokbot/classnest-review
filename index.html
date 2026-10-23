@@ -527,7 +527,12 @@ function renderStaged(){
     const cur = s.items.filter((it) => it.stage === st && it.role === "current"), drafts = s.items.filter((it) => it.stage === st && it.role !== "current");
     if (!cur.length && !drafts.length) continue;
     const shown = drafts.filter((it) => passes(s, it)), nm = STAGE_NAMES[st];
-    const sub = s.kind === "ultra" ? "In the app now." : drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"}. Pick one to replace the current ${nm}, or REMAKE.` : "Not changing. Shown so you can check the style.";
+    const open = drafts.filter((it) => !doneOf(s, it)), shipCur = cur.find((it) => it.shipped);
+    const sub = s.kind === "ultra" ? "In the app now."
+      : open.length ? `${open.length} draft${open.length === 1 ? "" : "s"}. Pick one to replace the current ${nm}, or REMAKE.`
+      : shipCur ? `Shipped ${shipCur.shipped}: the new ${nm} is in the app now. Nothing left to vote here.`
+      : drafts.length ? `Decided. Nothing left to vote here (${s.shipped ? `set shipped ${s.shipped}` : "drafts closed"}).`
+      : (s.shipped ? `Not changed in ${s.shipped}. Shown so you can check the style.` : "Not changing. Shown so you can check the style.");
     order.push(...cur, ...shown);
     html += `<section class="stg" data-stage="${st}"><h2 class="stagehead">Stage ${st} · ${nm}</h2><div class="note">${esc(sub)}</div><div class="grid">${cur.map((it) => nowCard(s, it)).join("")}${shown.map((it) => card(s, it)).join("")}</div>${drafts.length && !shown.length ? `<p class="empty small">${filter === "todo" ? "All drafts here have a vote ✓ (see Confirm / Remake / Sent)" : "No drafts for this filter."}</p>` : ""}</section>`;
   }
