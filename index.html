@@ -21,7 +21,7 @@ h2{font-size:14px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;
 .grid{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:700px){.grid{grid-template-columns:1fr 1fr}}@media(min-width:1050px){.grid{grid-template-columns:1fr 1fr 1fr}}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}@media(min-width:700px){.tiles{grid-template-columns:repeat(5,1fr)}}@media(min-width:1050px){.tiles{grid-template-columns:repeat(7,1fr)}}
 .card{background:var(--card);border:2px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
-.card.yes{border-color:var(--yes)}.card.no{border-color:var(--no)}
+.card.yes{border-color:var(--yes)}.card.confirmed{border-width:3px;border-color:var(--yes);box-shadow:0 0 0 2px rgba(22,163,74,.35)}.cbadge{display:block;background:var(--yes);color:#fff;font-weight:900;letter-spacing:.05em;font-size:14px;padding:8px 12px}.card.no{border-color:var(--no)}
 .media{display:block;width:100%;aspect-ratio:var(--ar,1);object-fit:contain;background:#000;cursor:zoom-in}
 .body{padding:10px}.title{font-weight:700}.note{color:var(--muted);font-size:13px}
 .badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;border-radius:6px;padding:2px 6px;background:var(--ship);color:#1a1205;vertical-align:middle}
@@ -329,7 +329,7 @@ function pruneStale(){
 /* ---------- Copy text (Number Pictures shape): version line, then CONFIRM / REMAKE / REJECT / COMMENT buckets of "Section: id, id — note" ---------- */
 function pendingEntries(){
   const out = [];
-  for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isActive(e) && !doneOf(s, it) && canVote(s, it)) out.push({s, item:it, e, k: keyOf(s, it)}); }
+  for (const s of sets) for (const it of s.items) { const e = rawOf(s, it); if (isActive(e) && !e.baseline && !doneOf(s, it) && canVote(s, it)) out.push({s, item:it, e, k: keyOf(s, it)}); }
   return out;
 }
 function bySection(list, note){
@@ -494,7 +494,7 @@ function stats(s){
   for (const it of s.items) {
     if (inQueue(s, it)) todo++;
     const e = rawOf(s, it); if (doneOf(s, it)) continue;
-    if (isActive(e)) { if (e.vote === "yes") y++; else if (e.vote === "no") n++; else if (e.vote === "reject") r++; else c++; } else if (isSent(e)) sent++;
+    if (isActive(e) && e.baseline) sent++; else if (isActive(e)) { if (e.vote === "yes") y++; else if (e.vote === "no") n++; else if (e.vote === "reject") r++; else c++; } else if (isSent(e)) sent++;
   }
   return {todo, y, n, r, c, sent};
 }
@@ -519,6 +519,7 @@ function passes(s, it){
   if (filter === "done") return !!done;
   if (done) return false;                                   // shipped / done items only show under Shipped / done and All
   const raw = rawOf(s, it), e = entryOf(s, it);
+  if (e.vote === "yes" && filter === "todo") return true;   // confirmed cards stay in place with a green ✓ CONFIRMED badge (Ash)
   if (filter === "todo") return inQueue(s, it);
   if (filter === "sent") return isSent(raw);
   if (filter === "yes") return e.vote === "yes"; if (filter === "no") return e.vote === "no"; if (filter === "reject") return e.vote === "reject";
@@ -534,7 +535,8 @@ function nowCard(s, it){
   <div class="note">${on ? `Keeping today's ${STAGE_NAMES[it.stage]}. Picking a draft below switches this off.` : `Like none of the drafts? Keep this ${STAGE_NAMES[it.stage]} instead.`}</div>
   ${on ? `<button class="clearbtn" data-clear="${esc(kp.id)}">Clear</button>` : ""}`;
   }
-  return `<div class="card now ${keep && entryOf(s, kp).vote === "yes" ? "yes" : ""}"><span class="sbadge now">${esc(b.t)}</span>
+  const kon = keep && entryOf(s, kp).vote === "yes";
+  return `<div class="card now ${kon ? "yes confirmed" : ""}">${kon ? `<span class="cbadge">✓ CONFIRMED: Keep current</span>` : ""}<span class="sbadge now">${esc(b.t)}</span>
   <img class="media" src="${cardImg(s, it)}" alt="${esc(nameOf(it))}" loading="lazy" data-zoom="${esc(it.id)}">
   <div class="body"><div class="title">${esc(nameOf(it))}</div><div class="note">Stage ${it.stage} · ${STAGE_NAMES[it.stage]} · in the app today${it.note ? " · " + esc(it.note) : ""}</div>${keep}</div></div>`;
 }
@@ -559,7 +561,8 @@ function card(s, it){
   const ttl = it.role === "draft"
     ? `<div class="ttl"><span class="letter">${esc(it.letter || "?")}</span>${esc(nameOf(it))}${pickTag(it)}</div>${it.desc ? `<div class="desc">${esc(it.desc)}</div>` : ""}`
     : `<div class="title">${it.kind === "video" ? "▶ " : ""}${esc(nameOf(it))}</div>`;
-  return `<div class="card ${it.role || ""} ${e.vote||""} ${rej && e.vote !== "reject" ? "reject" : ""}" ${rej ? `data-rejected="1"` : ""}>${head}
+  const conf = e.vote === "yes" && !done ? `<span class="cbadge">✓ CONFIRMED</span>` : "";
+  return `<div class="card ${it.role || ""} ${e.vote||""} ${conf ? "confirmed" : ""} ${rej && e.vote !== "reject" ? "reject" : ""}" ${rej ? `data-rejected="1"` : ""}>${conf}${head}
   <img class="media" src="${img}" alt="${esc(nameOf(it))}" loading="lazy" data-zoom="${esc(it.id)}">
   <div class="body">${ttl}${pin ? `<div class="pin ${pin.cls}">${esc(pin.t)}</div>` : ""}${it.note ? `<div class="note">${esc(it.note)}</div>` : ""}
   ${votes}${hist}<div class="saved" data-saved="${esc(k)}"></div></div></div>`;
