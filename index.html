@@ -31,7 +31,7 @@ h2{font-size:14px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;
 .vote .y.on,#lb .y.on{background:var(--yes);border-color:var(--yes);color:#fff}.vote .r,#lb .r{border-color:#7f1d1d;color:#fca5a5}.vote .r.on,#lb .r.on{background:#7f1d1d;border-color:#ef4444;color:#fff}.vote .n.on,#lb .n.on{background:var(--no);border-color:var(--no);color:#fff}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.chips button{font-size:13px;padding:5px 10px;min-height:32px}
 .chips button.on{background:#7f1d1d;border-color:#f87171;color:#fff;font-weight:600}
-textarea{width:100%;min-height:56px;font:inherit;color:var(--fg);background:#10131b;border:1px solid var(--line);border-radius:10px;padding:8px}
+textarea{width:100%;min-height:56px;font:inherit;color:var(--fg);caret-color:var(--fg);-webkit-text-fill-color:var(--fg);background:#10131b;border:1px solid var(--line);border-radius:10px;padding:8px;color-scheme:dark;opacity:1}
 .hist{font-size:12px;color:var(--muted);margin-top:6px}.hist li{margin:2px 0}
 .saved{font-size:12px;color:var(--muted);margin-top:4px;min-height:16px}
 .tile{background:var(--card);border:2px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;color:var(--fg);text-decoration:none;display:block;padding:0;min-height:0;text-align:left;width:100%}
@@ -67,7 +67,7 @@ pre{white-space:pre-wrap;background:#10131b;border:1px solid var(--line);border-
 .menu{background:#10131b;border:1px solid var(--line);border-radius:12px;padding:8px;margin:6px 0}
 .chips.stack{flex-direction:column}.chips.stack button{width:100%;min-height:44px;font-size:14px;justify-content:flex-start;text-align:left}
 @media(max-width:699px){.chips{flex-direction:column}.chips button{width:100%;min-height:44px;font-size:14px;justify-content:flex-start}}
-.crow{display:block;width:100%;margin-top:8px}.crow textarea{display:block;width:100%;font-size:16px}
+.crow{display:block;width:100%;margin-top:8px}.crow textarea{display:block;width:100%;font-size:16px;color:var(--fg);caret-color:var(--fg);-webkit-text-fill-color:var(--fg);background:#10131b;opacity:1;visibility:visible}
 .wide{width:100%;margin-top:6px}
 .clearbtn{width:100%;margin-top:6px;background:transparent;color:var(--muted);border-style:dashed}
 details.shipped>summary{cursor:pointer;color:var(--muted);font-weight:700;padding:8px 0;list-style:none}details.shipped>summary::before{content:"▸ "}details.shipped[open]>summary::before{content:"▾ "}
@@ -465,7 +465,7 @@ function lbRender(){
   document.getElementById("lb-vote").addEventListener("click", (e) => {
     const b = e.target.closest("[data-lbvote]"); if (!b) return; const {s, it} = lb.list[lb.i];
     if (b.dataset.lbvote === "yes") { confirmItem(s, it); lbAdvance(); }
-    else if (b.dataset.lbvote === "no") { lb.menu = !lb.menu; lbRender(); }
+    else if (b.dataset.lbvote === "no") { lb.menu = !lb.menu; lbRender(); if (lb.menu) { const {s, it} = lb.list[lb.i]; focusRemakeBox(`${s.id}/${it.id}`); } }
     else if (b.dataset.lbvote === "reject") { const was = entryOf(s, it).vote === "reject"; rejectItem(s, it); if (was) lbRender(); else lbAdvance(); }
     else { clearItem(s, it); lbRender(); }
   });
@@ -545,11 +545,14 @@ function card(s, it){
   const hist = (raw?.history||[]).length ? `<details class="hist"><summary>History (${raw.history.length})</summary><ul>${raw.history.map((h) => `<li>${esc(when(h.at))} — ${esc(h.reason)}</li>`).join("")}</ul></details>` : "";
   const img = cardImg(s, it);
   const box = (ph) => `<textarea placeholder="${esc(ph)}" data-comment="${esc(it.id)}" data-key="${esc(k)}" rows="2" enterkeyhint="done">${esc(e.comment||"")}</textarea>`;
-  const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Tap a reason: REMAKE is applied and the card moves on.</div><div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}</div>
-  <label class="crow"><span class="note">…or type your own reason (saved as you type)</span>${box("Your reason, e.g. arms look odd")}</label>
+  /* Crow stays put when REMAKE opens (chips appear under it). Swapping the box out was why
+     typing worked BEFORE remake and failed AFTER — the editable box left the screen / lost focus. */
+  const menu = menuFor === k ? `<div class="menu"><div class="note" style="margin-bottom:4px">Use the box above, or tap a reason: REMAKE is applied and the card moves on.</div>
+  <div class="chips">${REMAKE_TEMPLATES.map((r) => `<button data-reason="${esc(r)}" data-id="${esc(it.id)}" class="${(e.reasons||[]).includes(r) ? "on" : ""}">${esc(r)}</button>`).join("")}</div>
   <button class="wide n" data-reason="__typed" data-id="${esc(it.id)}">✕ REMAKE with my reason</button><button class="wide" data-reason="" data-id="${esc(it.id)}">REMAKE (no reason)</button><button class="clearbtn" data-menuclose="1">Cancel</button></div>` : "";
-  const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button><button class="r ${e.vote==="reject"?"on":""}" data-vote="reject" data-id="${esc(it.id)}" aria-pressed="${e.vote==="reject"}">⊘ REJECT</button></div>${menu}
-  ${menuFor === k ? "" : `<label class="crow"><span class="note">Comment (saved as you type)</span>${box("Comment or your own remake reason")}</label>`}
+  const votes = canVote(s, it) ? `<div class="vote"><button class="y ${e.vote==="yes"?"on":""}" data-vote="yes" data-id="${esc(it.id)}">✓ CONFIRM</button><button class="n ${e.vote==="no"||menuFor===k?"on":""}" data-vote="no" data-id="${esc(it.id)}">✕ REMAKE…</button><button class="r ${e.vote==="reject"?"on":""}" data-vote="reject" data-id="${esc(it.id)}" aria-pressed="${e.vote==="reject"}">⊘ REJECT</button></div>
+  <label class="crow"><span class="note">${menuFor === k ? "Remake reason (saved as you type)" : "Comment (saved as you type)"}</span>${box(menuFor === k ? "Your reason, e.g. arms look odd" : "Comment or your own remake reason")}</label>
+  ${menu}
   ${e.vote || clean(e.comment) ? `<button class="clearbtn" data-clear="${esc(it.id)}">Clear verdict</button>` : ""}` : "";
   const rej = isRejected(s, it), rtag = rej ? `<span class="rtag">REJECTED</span>` : "";
   const head = b ? `<span class="sbadge ${b.cls}">${esc(b.t)}${rtag}${done ? `<span class="done">${esc(done)}</span>` : ""}</span>` : done ? `<span class="badge">${esc(done)}</span>${rtag}` : rtag;
@@ -675,7 +678,7 @@ document.addEventListener("click", (ev) => {
   if (t.dataset.home) { go("#/"); return; }
   if (t.dataset.vote === "yes") { menuFor = null; const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); confirmItem(set, it); return; }
   if (t.dataset.vote === "reject") { const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); rejectItem(set, it); return; }
-  if (t.dataset.vote === "no") { const k = keyOf(set, find(t.dataset.id)); menuFor = menuFor === k ? null : k; if (menuFor) sticky.add(k); render(); return; }
+  if (t.dataset.vote === "no") { const k = keyOf(set, find(t.dataset.id)); menuFor = menuFor === k ? null : k; if (menuFor) sticky.add(k); render(); if (menuFor) focusRemakeBox(k); return; }
   if (t.dataset.reason !== undefined) { const it = find(t.dataset.id); sticky.delete(keyOf(set, it)); remakeItem(set, it, t.dataset.reason === "__typed" ? "" : t.dataset.reason); return; }
   if (t.dataset.clear) { clearItem(set, find(t.dataset.clear)); return; }
   if (t.dataset.menuclose) { menuFor = null; render(); return; }
@@ -702,10 +705,31 @@ document.addEventListener("input", (ev) => {
 });
 /* Typing: no re-render on blur (that used to drop the card mid-edit and eat the next tap); the card stays until a vote,
    a filter change or leaving the page. Keep the box above the phone keyboard and hide the bottom bar meanwhile. */
+/* Soft keyboard: never smooth-scroll on focus — that dismisses the keyboard on iOS/Android. */
+function nudgeCommentBox(t){
+  if (!t || document.activeElement !== t) return;
+  const r = t.getBoundingClientRect(), vh = window.innerHeight;
+  if (r.top < 70 || r.bottom > vh - 24) t.scrollIntoView({block: "center", behavior: "instant"});
+}
+function focusRemakeBox(key){
+  const tryFocus = () => {
+    // Prefer the lightbox reason box when its menu is open — crow on the card stays in the DOM
+    // behind the overlay and would otherwise steal querySelector / focus (typed text looks "invisible").
+    const sel = `textarea[data-key="${CSS.escape(key)}"]`;
+    const t = document.querySelector(`#lb-menu.open ${sel}`) || document.querySelector(sel);
+    if (!t) return false;
+    t.focus();
+    try { const n = t.value.length; t.setSelectionRange(n, n); } catch {}
+    nudgeCommentBox(t);
+    return document.activeElement === t;
+  };
+  if (tryFocus()) return;
+  requestAnimationFrame(() => { if (!tryFocus()) setTimeout(tryFocus, 50); });
+}
 document.addEventListener("focusin", (ev) => {
   const t = ev.target; if (!(t.dataset && t.dataset.comment)) return;
   document.body.classList.add("typing");
-  setTimeout(() => { if (document.activeElement === t) t.scrollIntoView({block: "center", behavior: "smooth"}); }, 350);
+  setTimeout(() => nudgeCommentBox(t), 50);
 });
 document.addEventListener("focusout", (ev) => {
   const t = ev.target; if (!(t.dataset && t.dataset.comment)) return;
